@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8" />
 <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-<title>PYP – Distance Puzzle (Debug Build)</title>
+<title>PYP – Distance Puzzle</title>
 
 <style>
 body {
@@ -92,15 +92,24 @@ button:active {
   margin-top: 8px;
   font-size: 12px;
 }
+
+label {
+  font-size: 12px;
+}
 </style>
 </head>
 
 <body>
 <div id="container">
+
   <!-- PLAY PANEL -->
   <div class="panel">
     <div id="game"></div>
-    <button onclick="resetPuzzle()">Reset / New Puzzle</button>
+    <button onclick="resetPuzzle()">Reset / New Puzzle</button><br><br>
+    <label>
+      <input type="checkbox" id="debugToggle" onchange="toggleDebug()" />
+      Show debug solution
+    </label>
     <div id="status">Form distance chains. Adjacent matches are invalid.</div>
   </div>
 
@@ -109,6 +118,7 @@ button:active {
     <div id="solution"></div>
     <div style="font-size:12px">Debug Solution</div>
   </div>
+
 </div>
 
 <script>
@@ -120,7 +130,6 @@ let grid = [];
 let solutionGrid = [];
 let anchors = {};
 let distances = {};
-let showDebug = true;   // toggle here
 
 const game = document.getElementById('game');
 const solutionEl = document.getElementById('solution');
@@ -131,97 +140,78 @@ const idx = (x,y)=>y*SIZE+x;
 const rand = ()=>Math.floor(Math.random()*SIZE);
 const manhattan = (a,b)=>Math.abs(a.x-b.x)+Math.abs(a.y-b.y);
 
-if (showDebug) debugPanel.style.display='block';
+function toggleDebug() {
+  debugPanel.style.display =
+    document.getElementById('debugToggle').checked ? 'block' : 'none';
+}
 
 function resetPuzzle() {
-  game.innerHTML='';
-  solutionEl.innerHTML='';
+  game.innerHTML = '';
+  solutionEl.innerHTML = '';
   grid = Array(SIZE*SIZE).fill('');
   solutionGrid = Array(SIZE*SIZE).fill('');
   anchors = {};
   distances = {};
 
-  // Step 1: build full solution
+  // Simple, safe anchor generation
   MAIN.forEach(shape=>{
     let a,b,d;
     do {
       a={x:rand(),y:rand()};
       b={x:rand(),y:rand()};
       d=manhattan(a,b);
-    } while(d<2);
+    } while (
+      d < 2 ||
+      anchors[`${a.x},${a.y}`] ||
+      anchors[`${b.x},${b.y}`]
+    );
 
-    distances[shape]=d;
-    solutionGrid[idx(a.x,a.y)] = shape;
-    solutionGrid[idx(b.x,b.y)] = shape;
+    anchors[`${a.x},${a.y}`] = shape;
+    anchors[`${b.x},${b.y}`] = shape;
+    distances[shape] = d;
   });
 
-  // fill remaining cells randomly but consistently
-  for(let i=0;i<SIZE*SIZE;i++){
-    if(solutionGrid[i]===''){
-      solutionGrid[i]=MAIN[Math.floor(Math.random()*MAIN.length)];
-    }
-  }
+  // One X
+  let xPos;
+  do { xPos={x:rand(),y:rand()}; }
+  while (anchors[`${xPos.x},${xPos.y}`]);
+  anchors[`${xPos.x},${xPos.y}`] = 'X';
 
-  // Step 2: extract anchors
-  MAIN.forEach(shape=>{
-    const pts=[];
-    solutionGrid.forEach((v,i)=>{
-      if(v===shape) pts.push(i);
-    });
-    const a=pts[Math.floor(Math.random()*pts.length)];
-    let b;
-    do { b=pts[Math.floor(Math.random()*pts.length)]; }
-    while(manhattan(
-      {x:a%SIZE,y:Math.floor(a/SIZE)},
-      {x:b%SIZE,y:Math.floor(b/SIZE)}
-    )!==distances[shape]);
-
-    anchors[`${a%SIZE},${Math.floor(a/SIZE)}`]=shape;
-    anchors[`${b%SIZE},${Math.floor(b/SIZE)}`]=shape;
-  });
-
-  // one X
-  let xi;
-  do { xi=Math.floor(Math.random()*SIZE*SIZE); }
-  while(anchors[`${xi%SIZE},${Math.floor(xi/SIZE)}`]);
-  anchors[`${xi%SIZE},${Math.floor(xi/SIZE)}`]='X';
-  solutionGrid[xi]='X';
-
-  // build boards
   buildBoard(game, grid, true);
-  if(showDebug) buildBoard(solutionEl, solutionGrid, false);
+  buildBoard(solutionEl, solutionGrid, false);
   validate();
 }
 
-function buildBoard(root, arr, clickable){
-  for(let y=0;y<SIZE;y++){
-    for(let x=0;x<SIZE;x++){
+function buildBoard(root, arr, playable) {
+  for(let y=0;y<SIZE;y++) {
+    for(let x=0;x<SIZE;x++) {
       const el=document.createElement('div');
       el.className='cell';
       const key=`${x},${y}`;
-      if(anchors[key]){
-        el.textContent=anchors[key];
-        arr[idx(x,y)]=anchors[key];
+
+      if(anchors[key]) {
+        arr[idx(x,y)] = anchors[key];
+        el.textContent = anchors[key];
         el.classList.add('anchor');
-      } else if(clickable){
-        el.onclick=()=>{
-          const i=idx(x,y);
-          const next=SHAPES[(SHAPES.indexOf(arr[i])+1)%SHAPES.length];
-          arr[i]=next;
-          el.textContent=next;
+      } else if(playable) {
+        el.onclick = () => {
+          const i = idx(x,y);
+          const next = SHAPES[(SHAPES.indexOf(arr[i])+1)%SHAPES.length];
+          arr[i] = next;
+          el.textContent = next;
           validate();
         };
-      } else {
-        el.textContent=arr[idx(x,y)];
       }
+
       root.appendChild(el);
     }
   }
 }
 
-function validate(){
+function validate() {
   [...game.children].forEach(c=>c.classList.remove('invalid'));
-  let solved=true;
+
+  let solved = true;
 
   MAIN.forEach(shape=>{
     const pts=[];
@@ -229,33 +219,30 @@ function validate(){
       for(let x=0;x<SIZE;x++)
         if(grid[idx(x,y)]===shape) pts.push({x,y});
 
-    if(pts.length<2){ solved=false; pts.forEach(mark); return; }
+    if(pts.length < 2) { solved=false; return; }
 
     pts.forEach(p=>{
       let ok=false;
       for(const q of pts){
         if(p===q) continue;
         const d=manhattan(p,q);
-        if(d===1) { ok=false; break; }
+        if(d===1){ ok=false; break; }
         if(d===distances[shape]) ok=true;
       }
-      if(!ok){ solved=false; mark(p); }
+      if(!ok){
+        solved=false;
+        game.children[idx(p.x,p.y)].classList.add('invalid');
+      }
     });
   });
 
-  if(solved && grid.every(v=>v!=='')){
-    status.textContent='Solved ✨';
-  } else {
-    status.textContent='Form distance chains. Adjacent matches are invalid.';
-  }
-}
-
-function mark(p){
-  game.children[idx(p.x,p.y)].classList.add('invalid');
+  status.textContent =
+    solved && grid.every(v=>v!=='')
+      ? 'Solved ✨'
+      : 'Form distance chains. Adjacent matches are invalid.';
 }
 
 resetPuzzle();
 </script>
 </body>
 </html>
-``

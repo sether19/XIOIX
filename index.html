@@ -3,61 +3,91 @@
 <head>
 <meta charset="UTF-8" />
 <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-<title>PYP – Local Distance Puzzle</title>
+<title>PYP – Mac OS‑9 Distance Puzzle</title>
 
 <style>
-body {
-  margin: 0;
-  background: #f5f0d8;
-  font-family: system-ui, sans-serif;
-  display: flex;
-  justify-content: center;
-  align-items: center;
-  min-height: 100vh;
-}
+  body {
+    margin: 0;
+    background:
+      repeating-linear-gradient(
+        0deg,
+        rgba(0,0,0,0.035),
+        rgba(0,0,0,0.035) 1px,
+        transparent 1px,
+        transparent 3px
+      ),
+      #efe9c9;
+    font-family: Chicago, Geneva, system-ui, sans-serif;
+    display: flex;
+    justify-content: center;
+    align-items: center;
+    min-height: 100vh;
+  }
 
-#container {
-  text-align: center;
-}
+  #container {
+    padding: 14px 16px 16px;
+    background: #dcd6b8;
+    border: 2px solid #000;
+    box-shadow: 3px 3px 0 #000;
+    text-align: center;
+  }
 
-#game {
-  display: grid;
-  grid-template-columns: repeat(5, 64px);
-  grid-template-rows: repeat(5, 64px);
-  gap: 6px;
-  margin-bottom: 12px;
-}
+  #game {
+    display: grid;
+    grid-template-columns: repeat(5, 52px);
+    grid-template-rows: repeat(5, 52px);
+    gap: 6px;
+    margin-bottom: 12px;
+  }
 
-.cell {
-  background: #fffdf4;
-  border-radius: 12px;
-  font-size: 28px;
-  display: flex;
-  justify-content: center;
-  align-items: center;
-  user-select: none;
-  cursor: pointer;
-}
+  .cell {
+    background: #fffdf0;
+    border: 2px solid #000;
+    box-shadow: inset -2px -2px 0 rgba(0,0,0,0.15);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 24px;
+    cursor: pointer;
+    user-select: none;
+  }
 
-.cell.anchor {
-  background: transparent;
-  cursor: default;
-}
+  .cell.anchor {
+    background: #f2edcf;
+    font-weight: bold;
+  }
 
-.cell.invalid {
-  outline: 3px solid rgba(200, 0, 0, 0.55);
-}
+  .cell.invalid {
+    background:
+      repeating-linear-gradient(
+        45deg,
+        rgba(0,0,0,0.12),
+        rgba(0,0,0,0.12) 1px,
+        transparent 1px,
+        transparent 4px
+      ),
+      #fffdf0;
+  }
 
-button {
-  padding: 6px 14px;
-  font-size: 14px;
-}
+  button {
+    font-family: inherit;
+    font-size: 13px;
+    border: 2px solid #000;
+    background: #e4e0c8;
+    padding: 4px 10px;
+    cursor: pointer;
+    box-shadow: 2px 2px 0 #000;
+  }
 
-#status {
-  margin-top: 8px;
-  font-size: 13px;
-  color: #444;
-}
+  button:active {
+    box-shadow: 0 0 0 #000;
+    transform: translate(2px,2px);
+  }
+
+  #status {
+    margin-top: 8px;
+    font-size: 12px;
+  }
 </style>
 </head>
 
@@ -65,12 +95,13 @@ button {
 <div id="container">
   <div id="game"></div>
   <button onclick="resetPuzzle()">Reset / New Puzzle</button>
-  <div id="status">Click cells to cycle shapes.</div>
+  <div id="status">Form distance chains. Adjacent matches break the grid.</div>
 </div>
 
 <script>
 const SIZE = 5;
-const SHAPES = ['', 'X', 'I', 'O'];   // cycle order
+const SHAPES = ['', '●', '○', '│', '─', 'X'];
+const MAIN = ['●','○','│','─'];
 let grid = [];
 let anchors = {};
 let distances = {};
@@ -78,104 +109,99 @@ let distances = {};
 const game = document.getElementById('game');
 const status = document.getElementById('status');
 
-const idx = (x,y) => y * SIZE + x;
-const rand = () => Math.floor(Math.random() * SIZE);
-const manhattan = (a,b) => Math.abs(a.x-b.x) + Math.abs(a.y-b.y);
+const idx = (x,y)=>y*SIZE+x;
+const rand = ()=>Math.floor(Math.random()*SIZE);
+const manhattan = (a,b)=>Math.abs(a.x-b.x)+Math.abs(a.y-b.y);
 
 function resetPuzzle() {
-  grid = Array(SIZE * SIZE).fill('');
+  grid = Array(SIZE*SIZE).fill('');
   anchors = {};
   distances = {};
-  game.innerHTML = '';
+  game.innerHTML='';
 
-  // place two anchors per shape
-  ['X','I','O'].forEach(shape => {
-    let a, b, d;
+  MAIN.forEach(shape => {
+    let a,b,d;
     do {
-      a = {x: rand(), y: rand()};
-      b = {x: rand(), y: rand()};
-      d = manhattan(a, b);
+      a={x:rand(),y:rand()};
+      b={x:rand(),y:rand()};
+      d=manhattan(a,b);
     } while (
-      d === 0 ||
+      d < 2 ||
       anchors[`${a.x},${a.y}`] ||
       anchors[`${b.x},${b.y}`]
     );
-
-    anchors[`${a.x},${a.y}`] = shape;
-    anchors[`${b.x},${b.y}`] = shape;
-    distances[shape] = d;
+    anchors[`${a.x},${a.y}`]=shape;
+    anchors[`${b.x},${b.y}`]=shape;
+    distances[shape]=d;
   });
 
-  // build grid
-  for (let y=0; y<SIZE; y++) {
-    for (let x=0; x<SIZE; x++) {
-      const el = document.createElement('div');
-      el.className = 'cell';
-      const key = `${x},${y}`;
+  let xPos;
+  do { xPos={x:rand(),y:rand()}; }
+  while(anchors[`${xPos.x},${xPos.y}`]);
+  anchors[`${xPos.x},${xPos.y}`]='X';
 
-      if (anchors[key]) {
-        const s = anchors[key];
-        grid[idx(x,y)] = s;
-        el.textContent = s;
+  for(let y=0;y<SIZE;y++)
+    for(let x=0;x<SIZE;x++){
+      const el=document.createElement('div');
+      el.className='cell';
+      const key=`${x},${y}`;
+
+      if(anchors[key]){
+        grid[idx(x,y)]=anchors[key];
+        el.textContent=anchors[key];
         el.classList.add('anchor');
       } else {
-        el.onclick = () => {
-          const i = idx(x,y);
-          const cur = SHAPES.indexOf(grid[i]);
-          const next = SHAPES[(cur+1) % SHAPES.length];
-          grid[i] = next;
-          el.textContent = next;
+        el.onclick=()=>{
+          const i=idx(x,y);
+          const next=SHAPES[(SHAPES.indexOf(grid[i])+1)%SHAPES.length];
+          grid[i]=next;
+          el.textContent=next;
           validate();
         };
       }
-
       game.appendChild(el);
     }
-  }
 
   validate();
 }
 
-function validate() {
-  [...game.children].forEach(c => c.classList.remove('invalid'));
-  let solved = true;
+function validate(){
+  [...game.children].forEach(c=>c.classList.remove('invalid'));
+  let solved=true;
 
-  ['X','I','O'].forEach(shape => {
-    const pts = [];
-    for (let y=0;y<SIZE;y++) for (let x=0;x<SIZE;x++)
-      if (grid[idx(x,y)] === shape)
-        pts.push({x,y});
+  MAIN.forEach(shape=>{
+    const pts=[];
+    for(let y=0;y<SIZE;y++)
+      for(let x=0;x<SIZE;x++)
+        if(grid[idx(x,y)]===shape) pts.push({x,y});
 
-    if (pts.length === 1) {
-      mark(pts[0]);
-      solved = false;
-      return;
-    }
+    if(pts.length<2){ pts.forEach(mark); solved=false; return; }
 
-    pts.forEach(p => {
-      let ok = pts.some(q =>
-        q !== p && manhattan(p,q) === distances[shape]
-      );
-      if (!ok) {
-        mark(p);
-        solved = false;
+    pts.forEach(p=>{
+      let ok=false;
+      for(const q of pts){
+        if(p===q) continue;
+        const d=manhattan(p,q);
+        if(d===1) { ok=false; break; }
+        if(d===distances[shape]) ok=true;
       }
+      if(!ok){ mark(p); solved=false; }
     });
   });
 
-  if (solved && grid.every(c => c !== '')) {
-    status.textContent = 'Solved ✨';
+  if(solved && grid.every(v=>v!=='')){
+    status.textContent='Solved ✨';
   } else {
-    status.textContent = 'Each shape must link to at least one match.';
+    status.textContent='Form distance chains. Adjacent matches break the grid.';
   }
 }
 
-function mark(p) {
-  const i = idx(p.x,p.y);
-  game.children[i].classList.add('invalid');
+function mark(p){
+  game.children[idx(p.x,p.y)].classList.add('invalid');
 }
 
 resetPuzzle();
 </script>
 </body>
 </html>
+``

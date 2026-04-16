@@ -1,83 +1,87 @@
 <!DOCTYPE html>
 <html lang="en">
 <head>
-<meta charset="UTF-8" />
-<meta name="viewport" content="width=device-width, initial-scale=1.0" />
-<title>PYP – Distance Puzzle Test</title>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>PYP – Distance Puzzle (X I O)</title>
 
 <style>
-  body {
-    margin: 0;
-    background: #f5f0d8;
-    font-family: system-ui, sans-serif;
-    display: flex;
-    justify-content: center;
-    align-items: center;
-    min-height: 100vh;
-  }
+body {
+  margin: 0;
+  background: #f5f0d8;
+  font-family: system-ui, sans-serif;
+  display: flex;
+  justify-content: center;
+  align-items: center;
+  min-height: 100vh;
+}
 
-  #container {
-    display: flex;
-    flex-direction: column;
-    align-items: center;
-  }
+#container {
+  text-align: center;
+}
 
-  #game {
-    display: grid;
-    grid-template-columns: repeat(5, 64px);
-    grid-template-rows: repeat(5, 64px);
-    gap: 6px;
-    margin-bottom: 14px;
-  }
+#game {
+  display: grid;
+  grid-template-columns: repeat(5, 64px);
+  grid-template-rows: repeat(5, 64px);
+  gap: 6px;
+  margin-bottom: 14px;
+}
 
-  .cell {
-    background: #fffdf4;
-    border-radius: 12px;
-    display: flex;
-    justify-content: center;
-    align-items: center;
-    font-size: 26px;
-    user-select: none;
-    cursor: pointer;
-  }
+.cell {
+  background: #fffdf4;
+  border-radius: 12px;
+  font-size: 28px;
+  display: flex;
+  justify-content: center;
+  align-items: center;
+  cursor: pointer;
+  user-select: none;
+}
 
-  .cell.anchor {
-    background: transparent;
-    cursor: default;
-  }
+.cell.anchor {
+  background: transparent;
+  cursor: default;
+}
 
-  #palette {
-    display: flex;
-    gap: 12px;
-    margin-bottom: 12px;
-  }
+.cell.invalid {
+  outline: 3px solid rgba(200, 0, 0, 0.55);
+}
 
-  .symbol {
-    width: 40px;
-    height: 40px;
-    border-radius: 10px;
-    background: #fff;
-    display: flex;
-    justify-content: center;
-    align-items: center;
-    font-size: 22px;
-    cursor: pointer;
-  }
+#palette {
+  display: flex;
+  justify-content: center;
+  gap: 12px;
+  margin-bottom: 10px;
+}
 
-  .symbol.selected {
-    outline: 3px solid #333;
-  }
+.shape {
+  width: 42px;
+  height: 42px;
+  border-radius: 10px;
+  background: #fff;
+  font-size: 22px;
+  display: flex;
+  justify-content: center;
+  align-items: center;
+  cursor: pointer;
+}
 
-  button {
-    padding: 6px 14px;
-    font-size: 14px;
-  }
+.shape.selected {
+  outline: 3px solid #333;
+}
 
-  #status {
-    margin-top: 8px;
-    font-size: 13px;
-    color: #444;
-  }
+button {
+  margin-top: 6px;
+  padding: 6px 14px;
+  font-size: 14px;
+}
+
+#status {
+  margin-top: 8px;
+  font-size: 13px;
+  color: #444;
+}
 </style>
 </head>
 
@@ -89,32 +93,44 @@
 
   <button onclick="resetPuzzle()">Reset / New Puzzle</button>
 
-  <div id="status">Each shape must keep the same distance to itself.</div>
+  <div id="status">Each shape must keep the same distance from itself.</div>
 </div>
 
 <script>
 const SIZE = 5;
-const SHAPES = ['✕', '◆', '○'];
+const SHAPES = ['X','I','O'];
 let selectedShape = null;
 
 let grid = [];
-let cells = [];
 let anchors = {};
-let distanceRules = {};
+let rules = {};
 
 const game = document.getElementById('game');
 const palette = document.getElementById('palette');
 const status = document.getElementById('status');
 
 const idx = (x,y) => y*SIZE + x;
-const manhattan = (a,b) => Math.abs(a.x-b.x)+Math.abs(a.y-b.y);
+const rand = () => Math.floor(Math.random()*SIZE);
 
+// Distance metrics
+const metrics = {
+  manhattan: (a,b) => Math.abs(a.x-b.x) + Math.abs(a.y-b.y),
+  chebyshev: (a,b) => Math.max(Math.abs(a.x-b.x), Math.abs(a.y-b.y)),
+  knight: (a,b) => {
+    const dx = Math.abs(a.x-b.x);
+    const dy = Math.abs(a.y-b.y);
+    return (dx === 1 && dy === 2) || (dx === 2 && dy === 1) ? 1 : -1;
+  }
+};
+
+// Build palette
+palette.innerHTML = '';
 SHAPES.forEach(s => {
   const el = document.createElement('div');
-  el.className = 'symbol';
+  el.className = 'shape';
   el.textContent = s;
   el.onclick = () => {
-    document.querySelectorAll('.symbol').forEach(x=>x.classList.remove('selected'));
+    document.querySelectorAll('.shape').forEach(x=>x.classList.remove('selected'));
     el.classList.add('selected');
     selectedShape = s;
   };
@@ -122,29 +138,36 @@ SHAPES.forEach(s => {
 });
 
 function resetPuzzle() {
-  game.innerHTML = '';
   grid = Array(SIZE*SIZE).fill(null);
-  cells = [];
   anchors = {};
-  distanceRules = {};
+  rules = {};
+  game.innerHTML = '';
 
-  // Place two anchors per shape randomly
+  // Assign rules + anchors (guaranteed valid)
   SHAPES.forEach(shape => {
-    let placed = [];
-    while (placed.length < 2) {
-      const x = Math.floor(Math.random()*SIZE);
-      const y = Math.floor(Math.random()*SIZE);
-      const key = `${x},${y}`;
-      if (!anchors[key]) {
-        anchors[key] = shape;
-        placed.push({x,y});
-      }
-    }
-    distanceRules[shape] = manhattan(placed[0], placed[1]);
+    const metricKeys = Object.keys(metrics);
+    const metric = metricKeys[Math.floor(Math.random()*metricKeys.length)];
+
+    let a, b, d;
+    do {
+      a = {x: rand(), y: rand()};
+      b = {x: rand(), y: rand()};
+      d = metrics[metric](a,b);
+    } while (
+      (a.x===b.x && a.y===b.y) ||
+      d <= 0 ||
+      anchors[`${a.x},${a.y}`] ||
+      anchors[`${b.x},${b.y}`]
+    );
+
+    anchors[`${a.x},${a.y}`] = shape;
+    anchors[`${b.x},${b.y}`] = shape;
+    rules[shape] = { metric, distance: d };
   });
 
-  for (let y=0;y<SIZE;y++) {
-    for (let x=0;x<SIZE;x++) {
+  // Build grid
+  for(let y=0;y<SIZE;y++) {
+    for(let x=0;x<SIZE;x++) {
       const el = document.createElement('div');
       el.className = 'cell';
       const key = `${x},${y}`;
@@ -157,35 +180,54 @@ function resetPuzzle() {
       } else {
         el.onclick = () => {
           if (!selectedShape) return;
-          if (!canPlace(selectedShape, x, y)) return;
           grid[idx(x,y)] = selectedShape;
           el.textContent = selectedShape;
-          checkWin();
+          validate();
         };
       }
 
       game.appendChild(el);
-      cells.push({x,y,el});
     }
   }
 
-  status.textContent = 'Each shape keeps a fixed distance to itself.';
+  validate();
 }
 
-function canPlace(shape, x, y) {
-  const rule = distanceRules[shape];
-  for (const {x:cx,y:cy} of cells) {
-    if (grid[idx(cx,cy)] === shape) {
-      if (manhattan({x,y},{x:cx,y:cy}) !== rule) return false;
+// Validate distances (never block, only mark)
+function validate() {
+  [...game.children].forEach(c=>c.classList.remove('invalid'));
+
+  let allGood = true;
+
+  SHAPES.forEach(shape => {
+    const pts = [];
+    for(let y=0;y<SIZE;y++) for(let x=0;x<SIZE;x++) {
+      if(grid[idx(x,y)] === shape) pts.push({x,y});
     }
-  }
-  return true;
-}
 
-function checkWin() {
-  if (grid.every(c => c !== null)) {
+    for(let i=0;i<pts.length;i++) {
+      for(let j=i+1;j<pts.length;j++) {
+        const rule = rules[shape];
+        const m = metrics[rule.metric](pts[i], pts[j]);
+        if (m !== rule.distance) {
+          allGood = false;
+          markInvalid(pts[i]);
+          markInvalid(pts[j]);
+        }
+      }
+    }
+  });
+
+  if (allGood && grid.every(c=>c!==null)) {
     status.textContent = 'Solved ✨';
+  } else {
+    status.textContent = 'Experiment freely. Conflicts are allowed.';
   }
+}
+
+function markInvalid(p) {
+  const i = idx(p.x,p.y);
+  game.children[i].classList.add('invalid');
 }
 
 resetPuzzle();

@@ -3,13 +3,13 @@
 <head>
 <meta charset="UTF-8" />
 <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-<title>Constraint Weaving – v8</title>
+<title>PYP – 5x5 Test Puzzle</title>
 
 <style>
   body {
     margin: 0;
     background: #f5f0d8;
-    font-family: system-ui, -apple-system, BlinkMacSystemFont, sans-serif;
+    font-family: system-ui, sans-serif;
     display: flex;
     justify-content: center;
     align-items: center;
@@ -24,71 +24,69 @@
 
   #game {
     display: grid;
-    grid-template-columns: repeat(6, minmax(48px, 64px));
-    grid-template-rows: repeat(6, minmax(48px, 64px));
+    grid-template-columns: repeat(5, 64px);
+    grid-template-rows: repeat(5, 64px);
     gap: 6px;
   }
 
   .cell {
     background: #fffdf4;
-    border-radius: 14px;
+    border-radius: 12px;
     display: flex;
     justify-content: center;
     align-items: center;
-    font-size: 28px;
+    font-size: 26px;
     user-select: none;
+    cursor: pointer;
   }
 
-  .cell:hover {
-    background: #f0ecd0;
-  }
-
-  .cell.settle {
-    background: #e6f0e6;
-  }
-
-  .cell.unstable {
-    background: #f5dada;
-  }
-
-  /* Anchors are visually blank but immovable */
   .cell.anchor {
     background: transparent;
     cursor: default;
   }
 
-  .cell.diagPreview {
-    box-shadow: inset 0 0 0 2px rgba(80, 80, 80, 0.45);
+  .cell.cancelled {
+    background:
+      repeating-linear-gradient(
+        45deg,
+        rgba(0,0,0,0.06),
+        rgba(0,0,0,0.06) 1px,
+        transparent 1px,
+        transparent 4px
+      ),
+      #fffdf4;
+  }
+
+  .cell.diag {
+    box-shadow: inset 0 0 0 2px rgba(80,80,80,0.4);
   }
 
   #palette {
-    margin-top: 16px;
+    margin-top: 14px;
     display: flex;
     gap: 12px;
-    flex-wrap: wrap;
-    justify-content: center;
   }
 
-  .thread {
-    width: 44px;
-    height: 44px;
-    font-size: 24px;
+  .symbol {
+    width: 40px;
+    height: 40px;
     border-radius: 50%;
-    background: #ffffff;
+    background: #fff;
     display: flex;
-    align-items: center;
     justify-content: center;
+    align-items: center;
+    font-size: 22px;
+    cursor: pointer;
   }
 
-  .thread.selected {
+  .symbol.selected {
     outline: 3px solid #333;
   }
 
   #status {
     margin-top: 10px;
-    font-size: 14px;
+    font-size: 13px;
     color: #444;
-    text-align: center;
   }
 </style>
 </head>
@@ -97,148 +95,98 @@
 <div id="container">
   <div id="game"></div>
   <div id="palette"></div>
-  <div id="status">
-    Each row &amp; column wants one of each thread.
-  </div>
+  <div id="status">Try a move. See what changes.</div>
 </div>
 
 <script>
-  const SIZE = 6;
-  const THREADS = ['●', '━', '│', '✕', '○'];
-  let selectedThread = null;
+  const SIZE = 5;
+  const SYMBOLS = ['●', '━', '│', '○'];
+  let selected = null;
 
-  // Pre-placed, immovable anchors
+  // Pre-set puzzle (very light!)
   const anchors = {
     '1,0': '━',
-    '4,1': '○',
-    '0,3': '│',
-    '2,4': '✕'
+    '3,2': '✕',
+    '0,4': '│'
   };
 
   const grid = Array(SIZE * SIZE).fill(null);
   const cells = [];
-
   const game = document.getElementById('game');
   const palette = document.getElementById('palette');
   const status = document.getElementById('status');
 
-  // Build palette
-  THREADS.forEach(symbol => {
+  SYMBOLS.forEach(s => {
     const el = document.createElement('div');
-    el.className = 'thread';
-    el.textContent = symbol;
+    el.className = 'symbol';
+    el.textContent = s;
     el.onclick = () => {
-      document.querySelectorAll('.thread')
-        .forEach(t => t.classList.remove('selected'));
+      document.querySelectorAll('.symbol').forEach(x => x.classList.remove('selected'));
       el.classList.add('selected');
-      selectedThread = symbol;
+      selected = s;
     };
     palette.appendChild(el);
   });
 
-  const idx = (x, y) => y * SIZE + x;
+  const idx = (x,y) => y * SIZE + x;
 
-  // X cancels only the four immediate diagonal neighbors
-  const diagonalNeighbors = (x, y) => [
-    [x + 1, y + 1],
-    [x + 1, y - 1],
-    [x - 1, y + 1],
-    [x - 1, y - 1]
-  ].filter(([cx, cy]) =>
-    cx >= 0 && cy >= 0 && cx < SIZE && cy < SIZE
-  );
+  function diagNeighbors(x,y) {
+    return [
+      [x+1,y+1],[x+1,y-1],[x-1,y+1],[x-1,y-1]
+    ].filter(([cx,cy]) => cx>=0 && cy>=0 && cx<SIZE && cy<SIZE);
+  }
 
-  const isCancelled = (x, y) =>
-    diagonalNeighbors(x, y).some(
-      ([cx, cy]) => grid[idx(cx, cy)] === '✕'
+  function isCancelled(x,y) {
+    return diagNeighbors(x,y).some(
+      ([cx,cy]) => grid[idx(cx,cy)] === '✕'
     );
-
-  function hasConflict(x, y, t) {
-    if (t === '○' || isCancelled(x, y)) return false;
-
-    if (t === '━') {
-      for (let i = 0; i < SIZE; i++) {
-        if (i !== x &&
-            grid[idx(i, y)] === '━' &&
-            !isCancelled(i, y)) return true;
-      }
-    }
-
-    if (t === '│') {
-      for (let i = 0; i < SIZE; i++) {
-        if (i !== y &&
-            grid[idx(x, i)] === '│' &&
-            !isCancelled(x, i)) return true;
-      }
-    }
-
-    return false;
   }
 
-  function updateBoard() {
-    let calm = true;
-
-    cells.forEach(({ x, y, el }) => {
-      el.classList.remove('diagPreview', 'settle', 'unstable');
-      const t = grid[idx(x, y)];
-      if (!t) {
-        calm = false;
-        return;
-      }
-      if (hasConflict(x, y, t)) {
-        el.classList.add('unstable');
-        calm = false;
-      } else {
-        el.classList.add('settle');
-      }
-    });
-
-    status.textContent = calm
-      ? 'The system feels calm.'
-      : 'Each row & column wants one of each thread.';
-  }
-
-  function previewX(x, y) {
-    diagonalNeighbors(x, y).forEach(([cx, cy]) => {
-      const cell = cells.find(c => c.x === cx && c.y === cy);
-      if (cell) cell.el.classList.add('diagPreview');
+  function redraw() {
+    cells.forEach(({x,y,el}) => {
+      el.classList.remove('cancelled','diag');
+      if (isCancelled(x,y)) el.classList.add('cancelled');
     });
   }
 
-  // Build grid
-  for (let y = 0; y < SIZE; y++) {
-    for (let x = 0; x < SIZE; x++) {
+  function previewX(x,y) {
+    diagNeighbors(x,y).forEach(([cx,cy]) => {
+      const c = cells.find(c => c.x===cx && c.y===cy);
+      if (c) c.el.classList.add('diag');
+    });
+  }
+
+  for (let y=0; y<SIZE; y++) {
+    for (let x=0; x<SIZE; x++) {
       const el = document.createElement('div');
       el.className = 'cell';
       const key = `${x},${y}`;
 
       if (anchors[key]) {
         const t = anchors[key];
-        grid[idx(x, y)] = t;
+        grid[idx(x,y)] = t;
         el.textContent = t;
         el.classList.add('anchor');
         if (t === '✕') {
-          el.onclick = () => previewX(x, y);
+          el.onmouseenter = () => previewX(x,y);
+          el.onmouseleave = redraw;
         }
       } else {
         el.onclick = () => {
-          if (!selectedThread) return;
-          grid[idx(x, y)] = selectedThread;
-          el.textContent = selectedThread;
-          if (selectedThread === '✕') {
-            el.onclick = () => previewX(x, y);
-          }
-          updateBoard();
+          if (!selected) return;
+          grid[idx(x,y)] = selected;
+          el.textContent = selected;
+          redraw();
+          status.textContent = 'Notice how certain cells stop counting.';
         };
       }
 
       game.appendChild(el);
-      cells.push({ x, y, el });
+      cells.push({x,y,el});
     }
   }
 
-  updateBoard();
+  redraw();
 </script>
 </body>
 </html>
-

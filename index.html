@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8" />
 <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-<title>PYP – 5x5 Test Puzzle</title>
+<title>PYP – Distance Puzzle Test</title>
 
 <style>
   body {
@@ -27,6 +27,7 @@
     grid-template-columns: repeat(5, 64px);
     grid-template-rows: repeat(5, 64px);
     gap: 6px;
+    margin-bottom: 14px;
   }
 
   .cell {
@@ -45,32 +46,16 @@
     cursor: default;
   }
 
-  .cell.cancelled {
-    background:
-      repeating-linear-gradient(
-        45deg,
-        rgba(0,0,0,0.06),
-        rgba(0,0,0,0.06) 1px,
-        transparent 1px,
-        transparent 4px
-      ),
-      #fffdf4;
-  }
-
-  .cell.diag {
-    box-shadow: inset 0 0 0 2px rgba(80,80,80,0.4);
-  }
-
   #palette {
-    margin-top: 14px;
     display: flex;
     gap: 12px;
+    margin-bottom: 12px;
   }
 
   .symbol {
     width: 40px;
     height: 40px;
-    border-radius: 50%;
+    border-radius: 10px;
     background: #fff;
     display: flex;
     justify-content: center;
@@ -83,8 +68,13 @@
     outline: 3px solid #333;
   }
 
+  button {
+    padding: 6px 14px;
+    font-size: 14px;
+  }
+
   #status {
-    margin-top: 10px;
+    margin-top: 8px;
     font-size: 13px;
     color: #444;
   }
@@ -94,90 +84,83 @@
 <body>
 <div id="container">
   <div id="game"></div>
+
   <div id="palette"></div>
-  <div id="status">Try a move. See what changes.</div>
+
+  <button onclick="resetPuzzle()">Reset / New Puzzle</button>
+
+  <div id="status">Each shape must keep the same distance to itself.</div>
 </div>
 
 <script>
-  const SIZE = 5;
-  const SYMBOLS = ['●', '━', '│', '○'];
-  let selected = null;
+const SIZE = 5;
+const SHAPES = ['✕', '◆', '○'];
+let selectedShape = null;
 
-  // Pre-set puzzle (very light!)
-  const anchors = {
-    '1,0': '━',
-    '3,2': '✕',
-    '0,4': '│'
+let grid = [];
+let cells = [];
+let anchors = {};
+let distanceRules = {};
+
+const game = document.getElementById('game');
+const palette = document.getElementById('palette');
+const status = document.getElementById('status');
+
+const idx = (x,y) => y*SIZE + x;
+const manhattan = (a,b) => Math.abs(a.x-b.x)+Math.abs(a.y-b.y);
+
+SHAPES.forEach(s => {
+  const el = document.createElement('div');
+  el.className = 'symbol';
+  el.textContent = s;
+  el.onclick = () => {
+    document.querySelectorAll('.symbol').forEach(x=>x.classList.remove('selected'));
+    el.classList.add('selected');
+    selectedShape = s;
   };
+  palette.appendChild(el);
+});
 
-  const grid = Array(SIZE * SIZE).fill(null);
-  const cells = [];
-  const game = document.getElementById('game');
-  const palette = document.getElementById('palette');
-  const status = document.getElementById('status');
+function resetPuzzle() {
+  game.innerHTML = '';
+  grid = Array(SIZE*SIZE).fill(null);
+  cells = [];
+  anchors = {};
+  distanceRules = {};
 
-  SYMBOLS.forEach(s => {
-    const el = document.createElement('div');
-    el.className = 'symbol';
-    el.textContent = s;
-    el.onclick = () => {
-      document.querySelectorAll('.symbol').forEach(x => x.classList.remove('selected'));
-      el.classList.add('selected');
-      selected = s;
-    };
-    palette.appendChild(el);
+  // Place two anchors per shape randomly
+  SHAPES.forEach(shape => {
+    let placed = [];
+    while (placed.length < 2) {
+      const x = Math.floor(Math.random()*SIZE);
+      const y = Math.floor(Math.random()*SIZE);
+      const key = `${x},${y}`;
+      if (!anchors[key]) {
+        anchors[key] = shape;
+        placed.push({x,y});
+      }
+    }
+    distanceRules[shape] = manhattan(placed[0], placed[1]);
   });
 
-  const idx = (x,y) => y * SIZE + x;
-
-  function diagNeighbors(x,y) {
-    return [
-      [x+1,y+1],[x+1,y-1],[x-1,y+1],[x-1,y-1]
-    ].filter(([cx,cy]) => cx>=0 && cy>=0 && cx<SIZE && cy<SIZE);
-  }
-
-  function isCancelled(x,y) {
-    return diagNeighbors(x,y).some(
-      ([cx,cy]) => grid[idx(cx,cy)] === '✕'
-    );
-  }
-
-  function redraw() {
-    cells.forEach(({x,y,el}) => {
-      el.classList.remove('cancelled','diag');
-      if (isCancelled(x,y)) el.classList.add('cancelled');
-    });
-  }
-
-  function previewX(x,y) {
-    diagNeighbors(x,y).forEach(([cx,cy]) => {
-      const c = cells.find(c => c.x===cx && c.y===cy);
-      if (c) c.el.classList.add('diag');
-    });
-  }
-
-  for (let y=0; y<SIZE; y++) {
-    for (let x=0; x<SIZE; x++) {
+  for (let y=0;y<SIZE;y++) {
+    for (let x=0;x<SIZE;x++) {
       const el = document.createElement('div');
       el.className = 'cell';
       const key = `${x},${y}`;
 
       if (anchors[key]) {
-        const t = anchors[key];
-        grid[idx(x,y)] = t;
-        el.textContent = t;
+        const s = anchors[key];
+        grid[idx(x,y)] = s;
+        el.textContent = s;
         el.classList.add('anchor');
-        if (t === '✕') {
-          el.onmouseenter = () => previewX(x,y);
-          el.onmouseleave = redraw;
-        }
       } else {
         el.onclick = () => {
-          if (!selected) return;
-          grid[idx(x,y)] = selected;
-          el.textContent = selected;
-          redraw();
-          status.textContent = 'Notice how certain cells stop counting.';
+          if (!selectedShape) return;
+          if (!canPlace(selectedShape, x, y)) return;
+          grid[idx(x,y)] = selectedShape;
+          el.textContent = selectedShape;
+          checkWin();
         };
       }
 
@@ -186,7 +169,27 @@
     }
   }
 
-  redraw();
+  status.textContent = 'Each shape keeps a fixed distance to itself.';
+}
+
+function canPlace(shape, x, y) {
+  const rule = distanceRules[shape];
+  for (const {x:cx,y:cy} of cells) {
+    if (grid[idx(cx,cy)] === shape) {
+      if (manhattan({x,y},{x:cx,y:cy}) !== rule) return false;
+    }
+  }
+  return true;
+}
+
+function checkWin() {
+  if (grid.every(c => c !== null)) {
+    status.textContent = 'Solved ✨';
+  }
+}
+
+resetPuzzle();
 </script>
 </body>
 </html>
+``

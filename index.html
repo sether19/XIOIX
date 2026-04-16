@@ -1,9 +1,9 @@
 <!DOCTYPE html>
 <html lang="en">
 <head>
-<meta charset="UTF-8">
-<meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>PYP – Distance Puzzle (X I O)</title>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>PYP – Local Distance Puzzle</title>
 
 <style>
 body {
@@ -25,7 +25,7 @@ body {
   grid-template-columns: repeat(5, 64px);
   grid-template-rows: repeat(5, 64px);
   gap: 6px;
-  margin-bottom: 14px;
+  margin-bottom: 12px;
 }
 
 .cell {
@@ -35,8 +35,8 @@ body {
   display: flex;
   justify-content: center;
   align-items: center;
-  cursor: pointer;
   user-select: none;
+  cursor: pointer;
 }
 
 .cell.anchor {
@@ -48,31 +48,7 @@ body {
   outline: 3px solid rgba(200, 0, 0, 0.55);
 }
 
-#palette {
-  display: flex;
-  justify-content: center;
-  gap: 12px;
-  margin-bottom: 10px;
-}
-
-.shape {
-  width: 42px;
-  height: 42px;
-  border-radius: 10px;
-  background: #fff;
-  font-size: 22px;
-  display: flex;
-  justify-content: center;
-  align-items: center;
-  cursor: pointer;
-}
-
-.shape.selected {
-  outline: 3px solid #333;
-}
-
 button {
-  margin-top: 6px;
   padding: 6px 14px;
   font-size: 14px;
 }
@@ -88,86 +64,51 @@ button {
 <body>
 <div id="container">
   <div id="game"></div>
-
-  <div id="palette"></div>
-
   <button onclick="resetPuzzle()">Reset / New Puzzle</button>
-
-  <div id="status">Each shape must keep the same distance from itself.</div>
+  <div id="status">Click cells to cycle shapes.</div>
 </div>
 
 <script>
 const SIZE = 5;
-const SHAPES = ['X','I','O'];
-let selectedShape = null;
-
+const SHAPES = ['', 'X', 'I', 'O'];   // cycle order
 let grid = [];
 let anchors = {};
-let rules = {};
+let distances = {};
 
 const game = document.getElementById('game');
-const palette = document.getElementById('palette');
 const status = document.getElementById('status');
 
-const idx = (x,y) => y*SIZE + x;
-const rand = () => Math.floor(Math.random()*SIZE);
-
-// Distance metrics
-const metrics = {
-  manhattan: (a,b) => Math.abs(a.x-b.x) + Math.abs(a.y-b.y),
-  chebyshev: (a,b) => Math.max(Math.abs(a.x-b.x), Math.abs(a.y-b.y)),
-  knight: (a,b) => {
-    const dx = Math.abs(a.x-b.x);
-    const dy = Math.abs(a.y-b.y);
-    return (dx === 1 && dy === 2) || (dx === 2 && dy === 1) ? 1 : -1;
-  }
-};
-
-// Build palette
-palette.innerHTML = '';
-SHAPES.forEach(s => {
-  const el = document.createElement('div');
-  el.className = 'shape';
-  el.textContent = s;
-  el.onclick = () => {
-    document.querySelectorAll('.shape').forEach(x=>x.classList.remove('selected'));
-    el.classList.add('selected');
-    selectedShape = s;
-  };
-  palette.appendChild(el);
-});
+const idx = (x,y) => y * SIZE + x;
+const rand = () => Math.floor(Math.random() * SIZE);
+const manhattan = (a,b) => Math.abs(a.x-b.x) + Math.abs(a.y-b.y);
 
 function resetPuzzle() {
-  grid = Array(SIZE*SIZE).fill(null);
+  grid = Array(SIZE * SIZE).fill('');
   anchors = {};
-  rules = {};
+  distances = {};
   game.innerHTML = '';
 
-  // Assign rules + anchors (guaranteed valid)
-  SHAPES.forEach(shape => {
-    const metricKeys = Object.keys(metrics);
-    const metric = metricKeys[Math.floor(Math.random()*metricKeys.length)];
-
+  // place two anchors per shape
+  ['X','I','O'].forEach(shape => {
     let a, b, d;
     do {
       a = {x: rand(), y: rand()};
       b = {x: rand(), y: rand()};
-      d = metrics[metric](a,b);
+      d = manhattan(a, b);
     } while (
-      (a.x===b.x && a.y===b.y) ||
-      d <= 0 ||
+      d === 0 ||
       anchors[`${a.x},${a.y}`] ||
       anchors[`${b.x},${b.y}`]
     );
 
     anchors[`${a.x},${a.y}`] = shape;
     anchors[`${b.x},${b.y}`] = shape;
-    rules[shape] = { metric, distance: d };
+    distances[shape] = d;
   });
 
-  // Build grid
-  for(let y=0;y<SIZE;y++) {
-    for(let x=0;x<SIZE;x++) {
+  // build grid
+  for (let y=0; y<SIZE; y++) {
+    for (let x=0; x<SIZE; x++) {
       const el = document.createElement('div');
       el.className = 'cell';
       const key = `${x},${y}`;
@@ -179,9 +120,11 @@ function resetPuzzle() {
         el.classList.add('anchor');
       } else {
         el.onclick = () => {
-          if (!selectedShape) return;
-          grid[idx(x,y)] = selectedShape;
-          el.textContent = selectedShape;
+          const i = idx(x,y);
+          const cur = SHAPES.indexOf(grid[i]);
+          const next = SHAPES[(cur+1) % SHAPES.length];
+          grid[i] = next;
+          el.textContent = next;
           validate();
         };
       }
@@ -193,39 +136,41 @@ function resetPuzzle() {
   validate();
 }
 
-// Validate distances (never block, only mark)
 function validate() {
-  [...game.children].forEach(c=>c.classList.remove('invalid'));
+  [...game.children].forEach(c => c.classList.remove('invalid'));
+  let solved = true;
 
-  let allGood = true;
-
-  SHAPES.forEach(shape => {
+  ['X','I','O'].forEach(shape => {
     const pts = [];
-    for(let y=0;y<SIZE;y++) for(let x=0;x<SIZE;x++) {
-      if(grid[idx(x,y)] === shape) pts.push({x,y});
+    for (let y=0;y<SIZE;y++) for (let x=0;x<SIZE;x++)
+      if (grid[idx(x,y)] === shape)
+        pts.push({x,y});
+
+    if (pts.length === 1) {
+      mark(pts[0]);
+      solved = false;
+      return;
     }
 
-    for(let i=0;i<pts.length;i++) {
-      for(let j=i+1;j<pts.length;j++) {
-        const rule = rules[shape];
-        const m = metrics[rule.metric](pts[i], pts[j]);
-        if (m !== rule.distance) {
-          allGood = false;
-          markInvalid(pts[i]);
-          markInvalid(pts[j]);
-        }
+    pts.forEach(p => {
+      let ok = pts.some(q =>
+        q !== p && manhattan(p,q) === distances[shape]
+      );
+      if (!ok) {
+        mark(p);
+        solved = false;
       }
-    }
+    });
   });
 
-  if (allGood && grid.every(c=>c!==null)) {
+  if (solved && grid.every(c => c !== '')) {
     status.textContent = 'Solved ✨';
   } else {
-    status.textContent = 'Experiment freely. Conflicts are allowed.';
+    status.textContent = 'Each shape must link to at least one match.';
   }
 }
 
-function markInvalid(p) {
+function mark(p) {
   const i = idx(p.x,p.y);
   game.children[i].classList.add('invalid');
 }
@@ -234,4 +179,3 @@ resetPuzzle();
 </script>
 </body>
 </html>
-``
